@@ -51,22 +51,23 @@ class MAEMetric(SumEvalMetric):
 
 
 class TimeMoE:
-    def __init__(self, model_path, device, context_length, prediction_length, **kwargs):
+    def __init__(self, model_path, device, context_length, prediction_length, cache_dir=None, **kwargs):
+        self.cache_dir = cache_dir
         try:
             from time_moe.models.modeling_time_moe import TimeMoeForPrediction
             model = TimeMoeForPrediction.from_pretrained(
                 model_path,
                 device_map=device,
-                # attn_implementation='flash_attention_2',
                 torch_dtype='auto',
+                cache_dir=cache_dir,
             )
         except:
             model = AutoModelForCausalLM.from_pretrained(
                 model_path,
                 device_map=device,
-                # attn_implementation='flash_attention_2',
                 torch_dtype='auto',
                 trust_remote_code=True,
+                cache_dir=cache_dir,
             )
 
         logging.info(f'>>> Model dtype: {model.dtype}; Attention:{model.config._attn_implementation}')
@@ -111,6 +112,9 @@ def evaluate(args):
             print('Error: ', f'Setup nccl fail, so set device to cpu: {e}')
             device = 'cpu'
             is_dist = False
+    elif torch.backends.mps.is_available():
+        device = 'mps'
+        is_dist = False
     else:
         device = 'cpu'
         is_dist = False
@@ -125,7 +129,8 @@ def evaluate(args):
         args.model,
         device,
         context_length=context_length,
-        prediction_length=prediction_length
+        prediction_length=prediction_length,
+        cache_dir=args.cache_dir,
     )
     if args.data.endswith('.csv'):
         dataset = BenchmarkEvalDataset(
@@ -223,6 +228,12 @@ if __name__ == '__main__':
         type=int,
         default=96,
         help='Prediction length'
+    )
+    parser.add_argument(
+        '--cache_dir',
+        type=str,
+        default=None,
+        help='Cache directory for model weights'
     )
     args = parser.parse_args()
     if args.context_length is None:
